@@ -55,7 +55,7 @@ export async function markAttendance(eventId: string, userIds: string[]) {
     .insert(attendanceRows);
   if (attendErr) return { error: attendErr.message };
 
-  // Insert XP transactions (+50 each).
+  // Queue +50 XP in pending_xp — users claim it themselves for the dopamine hit.
   const xpRows = newUserIds.map((uid) => ({
     community_id: event.community_id,
     user_id: uid,
@@ -65,7 +65,7 @@ export async function markAttendance(eventId: string, userIds: string[]) {
     reference_id: eventId,
   }));
   const { error: xpErr } = await supabase
-    .from("xp_transactions")
+    .from("pending_xp")
     .insert(xpRows);
   if (xpErr) return { error: xpErr.message };
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
-import { requireRole } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac";
 
 // ── Get active season for a community ──────────────────────────
 export async function getActiveSeason(communityId: string) {
@@ -55,7 +55,11 @@ export async function createSeason(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  await requireRole(supabase, communityId, user.id, "admin");
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_seasons");
+  } catch {
+    return { error: "Requires manage_seasons permission" };
+  }
 
   const { data, error } = await supabase
     .from("seasons")
@@ -82,7 +86,11 @@ export async function setActiveSeason(communityId: string, seasonId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  await requireRole(supabase, communityId, user.id, "admin");
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_seasons");
+  } catch {
+    return { error: "Requires manage_seasons permission" };
+  }
 
   // Deactivate all seasons in this community.
   await supabase
@@ -114,7 +122,11 @@ export async function createBattlePassTier(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  await requireRole(supabase, communityId, user.id, "admin");
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_seasons");
+  } catch {
+    return { error: "Requires manage_seasons permission" };
+  }
 
   // Verify the season belongs to this community.
   const { data: season } = await supabase

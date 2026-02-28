@@ -116,3 +116,86 @@
   .bg-glass { @apply bg-white/[0.03] backdrop-blur-sm; }
   .ring-brand { @apply ring-2 ring-indigo-500/40; }
 }
+
+/* ── XP Bar ──────────────────────────────────────────────────────────────────── */
+.xp-bar-fill {
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #7c3aed, #6366f1 50%, #22d3ee);
+  box-shadow: 0 0 18px rgba(99, 102, 241, 0.65), 0 0 6px rgba(34, 211, 238, 0.4);
+  transition: width 1.7s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+}
+.xp-bar-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  border-radius: inherit;
+  animation: xp-shimmer 2.2s ease-in-out infinite;
+}
+@keyframes xp-shimmer {
+  0%   { transform: translateX(-200%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Glowing dot at the bar tip */
+.xp-bar-tip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #67e8f9;
+  box-shadow: 0 0 10px #22d3ee, 0 0 22px rgba(34, 211, 238, 0.7), 0 0 40px rgba(34, 211, 238, 0.3);
+  transition: left 1.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Floating +XP labels */
+.xp-float {
+  position: absolute;
+  font-size: 13px;
+  font-weight: 800;
+  color: #c4b5fd;
+  text-shadow: 0 0 12px rgba(167, 139, 250, 0.8);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: xp-float-up 1.4s ease-out forwards;
+}
+@keyframes xp-float-up {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  60%  { opacity: 1; transform: translateY(-28px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-56px) scale(0.85); }
+}
+
+/* ── Claim card — animated gradient border ───────────────────────────────────── */
+.xp-claim-card {
+  background: linear-gradient(135deg, #7c3aed, #6366f1, #22d3ee, #a855f7, #7c3aed);
+  background-size: 300%;
+  animation: gradient-border 5s ease infinite;
+}
+@keyframes gradient-border {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+/* ── Claim button — animated gradient + pulsing glow ─────────────────────────── */
+.xp-claim-btn {
+  background: linear-gradient(135deg, #7c3aed, #6366f1, #06b6d4, #7c3aed);
+  background-size: 300%;
+  animation: gradient-border 3s ease infinite, claim-glow 2.2s ease-in-out infinite;
+}
+@keyframes claim-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.5), 0 0 40px rgba(99, 102, 241, 0.2); }
+  50%       { box-shadow: 0 0 32px rgba(99, 102, 241, 0.85), 0 0 64px rgba(99, 102, 241, 0.4), 0 0 90px rgba(34, 211, 238, 0.15); }
+}
+
+/* ── Tier newly-unlocked flash ───────────────────────────────────────────────── */
+@keyframes tier-unlock-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.8); }
+  40%  { box-shadow: 0 0 0 10px rgba(234, 179, 8, 0.25); }
+  100% { box-shadow: 0 0 0 18px rgba(234, 179, 8, 0); }
+}
+.tier-newly-unlocked {
+  animation: tier-unlock-flash 0.9s ease-out;
+}

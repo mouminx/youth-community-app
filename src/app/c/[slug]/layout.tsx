@@ -87,7 +87,7 @@ export default async function CommunityLayout({
     );
   }
 
-  const isAdmin = ["owner", "admin"].includes(membership.role);
+  const isMentor = ["owner", "admin", "mentor"].includes(membership.role);
   const base = `/c/${slug}`;
   const channels = await listChannels(community.id);
 
@@ -129,10 +129,10 @@ export default async function CommunityLayout({
           <NavLink href={`${base}/leaderboard`} icon={<Icon.Trophy />}>Leaderboard</NavLink>
           <NavLink href={`${base}/battlepass`} icon={<Icon.Star />}>Battle Pass</NavLink>
 
-          {isAdmin && (
+          {isMentor && (
             <>
               <SidebarSection label="Management" />
-              <NavLink href={`${base}/admin`} icon={<Icon.Shield />}>Admin</NavLink>
+              <NavLink href={`${base}/admin`} icon={<Icon.Shield />}>Management</NavLink>
             </>
           )}
         </nav>

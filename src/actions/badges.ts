@@ -1,7 +1,7 @@
 "use server";
 
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
-import { requireRole } from "@/lib/rbac";
+import { requireRole, requirePermission } from "@/lib/rbac";
 
 // ── Create badge (admin+) ──────────────────────────────────────
 export async function createBadge(
@@ -14,7 +14,11 @@ export async function createBadge(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
-  await requireRole(supabase, communityId, user.id, "admin");
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_badges");
+  } catch {
+    return { error: "Requires manage_badges permission" };
+  }
 
   const { data, error } = await supabase
     .from("badges")
@@ -70,8 +74,8 @@ export async function awardBadge(
     .eq("is_active", true)
     .single();
 
-  // Insert XP transaction (+25).
-  await supabase.from("xp_transactions").insert({
+  // Queue +25 XP in pending_xp — user claims it for the dopamine hit.
+  await supabase.from("pending_xp").insert({
     community_id: communityId,
     user_id: targetUserId,
     season_id: activeSeason?.id ?? null,

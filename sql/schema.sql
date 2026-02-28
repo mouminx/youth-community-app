@@ -204,7 +204,7 @@ create table public.channels (
 
 create index idx_channels_community on public.channels(community_id);
 
-create table public.messages (
+create table public.messages (2
   id           uuid primary key default gen_random_uuid(),
   channel_id   uuid not null references public.channels(id) on delete cascade,
   community_id uuid not null references public.communities(id) on delete cascade, -- denormalized for RLS + index
