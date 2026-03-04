@@ -30,7 +30,7 @@ export async function getPendingXp(communityId: string): Promise<PendingXpItem[]
 // ── Claim all pending XP for the current user (calls security-definer RPC) ─────
 export async function claimPendingXp(
   communityId: string
-): Promise<{ claimed: number } | { error: string }> {
+): Promise<{ claimed: number; currency_awarded: number } | { error: string }> {
   const supabase = await getSupabaseServerClient();
   const {
     data: { user },
@@ -42,5 +42,6 @@ export async function claimPendingXp(
   });
 
   if (error) return { error: error.message };
-  return { claimed: (data as { claimed: number }).claimed };
+  const d = data as { claimed: number; currency_awarded: number };
+  return { claimed: d.claimed, currency_awarded: d.currency_awarded ?? 0 };
 }

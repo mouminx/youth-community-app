@@ -66,19 +66,13 @@ export async function awardBadge(
     return { error: awardErr.message };
   }
 
-  // Find active season.
-  const { data: activeSeason } = await supabase
-    .from("seasons")
-    .select("id")
-    .eq("community_id", communityId)
-    .eq("is_active", true)
-    .single();
-
-  // Queue +25 XP in pending_xp — user claims it for the dopamine hit.
+  // Queue +25 XP in pending_xp as career XP (season_id = null).
+  // Badge XP is a long-term achievement reward — it contributes to career level
+  // but not to any ladder season, so users can't grind the ladder through badges.
   await supabase.from("pending_xp").insert({
     community_id: communityId,
     user_id: targetUserId,
-    season_id: activeSeason?.id ?? null,
+    season_id: null,
     amount: 25,
     reason: "badge_award",
     reference_id: award.id,
@@ -105,4 +99,48 @@ export async function listBadges(communityId: string) {
     .eq("community_id", communityId)
     .order("created_at", { ascending: false });
   return data ?? [];
+}
+
+export type BadgeWithStatus = {
+  id: string;
+  name: string;
+  description: string;
+  icon_url: string;
+  earned: boolean;
+  earned_at: string | null;
+};
+
+// ── List all badges with earned status for current user ────────
+export async function listBadgesWithStatus(communityId: string): Promise<BadgeWithStatus[]> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const [badgesRes, awardsRes] = await Promise.all([
+    supabase
+      .from("badges")
+      .select("id, name, description, icon_url")
+      .eq("community_id", communityId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("badge_awards")
+      .select("badge_id, created_at")
+      .eq("community_id", communityId)
+      .eq("user_id", user.id),
+  ]);
+
+  const earnedMap = new Map(
+    (awardsRes.data ?? []).map((a) => [a.badge_id, a.created_at])
+  );
+
+  return (badgesRes.data ?? []).map((b) => ({
+    id: b.id,
+    name: b.name,
+    description: b.description,
+    icon_url: b.icon_url,
+    earned: earnedMap.has(b.id),
+    earned_at: earnedMap.get(b.id) ?? null,
+  }));
 }

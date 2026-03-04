@@ -26,6 +26,17 @@ export async function listTiers(seasonId: string) {
   return data ?? [];
 }
 
+// ── User's all-time XP total (all seasons) ────────────────────
+export async function getUserCareerXp(communityId: string, userId: string) {
+  const supabase = await getSupabaseServerClient();
+  const { data } = await supabase
+    .from("xp_transactions")
+    .select("amount")
+    .eq("community_id", communityId)
+    .eq("user_id", userId);
+  return (data ?? []).reduce((sum, row) => sum + row.amount, 0);
+}
+
 // ── User's season XP total ─────────────────────────────────────
 export async function getUserSeasonXp(
   communityId: string,

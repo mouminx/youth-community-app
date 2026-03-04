@@ -344,3 +344,126 @@ export async function createChannel(
   if (error) return { error: error.message };
   return { data };
 }
+
+// ── Debug / Fast User Rewards (mentor+) ───────────────────────────────────────
+
+// Queue manual XP to a member's pending XP so they can claim it from Battle Pass.
+export async function grantManualXp(
+  communityId: string,
+  targetUserId: string,
+  amount: number
+): Promise<{ data: { success: true } } | { error: string }> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const normalizedAmount = Math.floor(amount);
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    return { error: "XP amount must be a positive number" };
+  }
+  if (normalizedAmount > 10000) {
+    return { error: "XP amount too large (max 10000)" };
+  }
+
+  try {
+    await requireRole(supabase, communityId, user.id, "mentor");
+  } catch {
+    return { error: "Requires mentor role or higher" };
+  }
+
+  const target = await getMembership(supabase, communityId, targetUserId);
+  if (!target) return { error: "Target user is not a member of this community" };
+
+  const { data: activeSeason } = await supabase
+    .from("seasons")
+    .select("id")
+    .eq("community_id", communityId)
+    .eq("is_active", true)
+    .single();
+
+  const { error } = await supabase.from("pending_xp").insert({
+    community_id: communityId,
+    user_id: targetUserId,
+    season_id: activeSeason?.id ?? null,
+    amount: normalizedAmount,
+    reason: "manual",
+    reference_id: null,
+  });
+  if (error) return { error: error.message };
+
+  return { data: { success: true } };
+}
+
+// Award a badge directly to a member (+25 pending XP), useful in debugging flows.
+export async function awardUserBadge(
+  communityId: string,
+  badgeId: string,
+  targetUserId: string
+): Promise<{ data: { success: true } } | { error: string }> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  try {
+    await requireRole(supabase, communityId, user.id, "mentor");
+  } catch {
+    return { error: "Requires mentor role or higher" };
+  }
+
+  const target = await getMembership(supabase, communityId, targetUserId);
+  if (!target) return { error: "Target user is not a member of this community" };
+
+  const { data: badge } = await supabase
+    .from("badges")
+    .select("id")
+    .eq("id", badgeId)
+    .eq("community_id", communityId)
+    .single();
+  if (!badge) return { error: "Badge not found in this community" };
+
+  const { data: award, error: awardErr } = await supabase
+    .from("badge_awards")
+    .insert({
+      badge_id: badgeId,
+      community_id: communityId,
+      user_id: targetUserId,
+      awarded_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (awardErr) {
+    if (awardErr.code === "23505") return { error: "Badge already awarded to this user." };
+    return { error: awardErr.message };
+  }
+
+  const { data: activeSeason } = await supabase
+    .from("seasons")
+    .select("id")
+    .eq("community_id", communityId)
+    .eq("is_active", true)
+    .single();
+
+  const { error: xpErr } = await supabase.from("pending_xp").insert({
+    community_id: communityId,
+    user_id: targetUserId,
+    season_id: activeSeason?.id ?? null,
+    amount: 25,
+    reason: "badge_award",
+    reference_id: award.id,
+  });
+  if (xpErr) return { error: xpErr.message };
+
+  await supabase.from("audit_log").insert({
+    community_id: communityId,
+    actor_id: user.id,
+    action: "badge_awarded",
+    target_user_id: targetUserId,
+    metadata: { badge_id: badgeId, award_id: award.id },
+  });
+
+  return { data: { success: true } };
+}

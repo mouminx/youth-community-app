@@ -99,16 +99,16 @@ export async function requirePermission(
   return membership;
 }
 
-// Resolve community by slug, returns { id, name, slug, description }.
+// Resolve community by slug, returns { id, name, slug, description, theme_key }.
 export async function getCommunityBySlug(
   supabase: SupabaseClient,
   slug: string
 ) {
   const { data, error } = await supabase
     .from("communities")
-    .select("id, name, slug, description")
+    .select("id, name, slug, description, theme_key")
     .eq("slug", slug)
     .single();
   if (error || !data) throw new Error("Community not found");
-  return data as { id: string; name: string; slug: string; description: string };
+  return data as { id: string; name: string; slug: string; description: string; theme_key: string };
 }

@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { getCommunityBySlug, getMembership } from "@/lib/rbac";
-import { getActiveSeason, listTiers, getUserSeasonXp } from "@/actions/battlepass";
+import { getActiveSeason, listTiers, getUserSeasonXp, getUserCareerXp } from "@/actions/battlepass";
 import { getPendingXp } from "@/actions/xp";
+import { getCurrencyBalance } from "@/actions/currency";
 import { XpClaimSection } from "./xp-claim";
 
 export default async function BattlePassPage({
@@ -27,7 +28,7 @@ export default async function BattlePassPage({
     return (
       <div className="flex-1 overflow-y-auto">
         <div className="border-b border-white/[0.06] px-8 py-5">
-          <h1 className="text-lg font-semibold text-white">Battle Pass</h1>
+          <h1 className="text-lg font-semibold text-white">The Ladder</h1>
           <p className="mt-0.5 text-sm text-gray-600">Season rewards and progression</p>
         </div>
         <div className="px-8 py-6">
@@ -42,17 +43,19 @@ export default async function BattlePassPage({
     );
   }
 
-  const [tiers, xpTotal, pendingItems] = await Promise.all([
+  const [tiers, xpTotal, pendingItems, careerXp, currencyBalance] = await Promise.all([
     listTiers(season.id),
     getUserSeasonXp(community.id, user.id, season.id),
     getPendingXp(community.id),
+    getUserCareerXp(community.id, user.id),
+    getCurrencyBalance(community.id),
   ]);
 
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Page header */}
       <div className="border-b border-white/[0.06] px-8 py-5">
-        <h1 className="text-lg font-semibold text-white">Battle Pass</h1>
+        <h1 className="text-lg font-semibold text-white">The Ladder</h1>
         <p className="mt-0.5 text-sm text-gray-600">
           {season.name} ·{" "}
           {new Date(season.starts_at).toLocaleDateString("en", { month: "short", day: "numeric" })} –{" "}
@@ -64,6 +67,8 @@ export default async function BattlePassPage({
         <XpClaimSection
           communityId={community.id}
           initialXp={xpTotal}
+          initialCareerXp={careerXp}
+          initialCurrency={currencyBalance}
           pendingItems={pendingItems}
           tiers={tiers}
           season={season}

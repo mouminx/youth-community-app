@@ -4,6 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createSeason, setActiveSeason, createBattlePassTier } from "@/actions/battlepass";
 import { createBadge } from "@/actions/badges";
+import { createTrophy, awardTrophy, type TrophyWithAwards } from "@/actions/trophies";
+import { awardCurrency } from "@/actions/currency";
+import { updateCommunityTheme } from "@/actions/theme";
+import { THEME_KEYS, type ThemeKey } from "@/lib/themes";
 import {
   requestPermission,
   reviewPermissionRequest,
@@ -11,8 +15,18 @@ import {
   changeMemberRole,
   promoteToAdmin,
   demoteAdmin,
+  grantManualXp,
+  awardUserBadge,
 } from "@/actions/management";
 import type { CommunityRole, GrantablePermission } from "@/lib/rbac";
+
+function Lock({ className = "" }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="5" y="11" width="14" height="10" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V8a4 4 0 118 0v3" /></svg>;
+}
+
+function Medal({ className = "" }: { className?: string }) {
+  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 3h8l-1.5 5h-5L8 3zm4 7a6 6 0 110 12 6 6 0 010-12z" /></svg>;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,7 +66,7 @@ type Grant = {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const PERM_LABEL: Record<GrantablePermission, string> = {
-  manage_seasons: "Manage Seasons & Battle Pass",
+  manage_seasons: "Manage Seasons & The Ladder",
   manage_badges: "Manage Badges",
   manage_channels: "Manage Channels",
   manage_members: "Manage Members",
@@ -82,11 +96,13 @@ interface Props {
   seasons: Season[];
   badges: Badge[];
   members: Member[];
+  trophies: TrophyWithAwards[];
   permissionRequests: PermReq[];
   grants: Grant[];
+  currentTheme: string;
 }
 
-type TabId = "seasons" | "badges" | "members" | "controls";
+type TabId = "seasons" | "badges" | "members" | "users" | "trophies" | "controls" | "theme";
 
 export function ManagementPanel({
   communityId,
@@ -96,8 +112,10 @@ export function ManagementPanel({
   seasons,
   badges,
   members,
+  trophies,
   permissionRequests,
   grants,
+  currentTheme,
 }: Props) {
   const router = useRouter();
   const isAdmin = role === "owner" || role === "admin";
@@ -108,7 +126,10 @@ export function ManagementPanel({
     { id: "seasons", label: "Seasons" },
     { id: "badges", label: "Badges" },
     { id: "members", label: "Members" },
+    { id: "users", label: "Users" },
+    ...(isAdmin ? [{ id: "trophies" as TabId, label: "Trophies" }] : []),
     ...(isAdmin ? [{ id: "controls" as TabId, label: "Controls" }] : []),
+    ...(isOwner ? [{ id: "theme" as TabId, label: "Theme" }] : []),
   ];
 
   function refresh() {
@@ -188,6 +209,22 @@ export function ManagementPanel({
             <MembersSection communityId={communityId} members={members} currentRole={role} onDone={refresh} />
           </PermissionGate>
         )}
+        {activeTab === "users" && (
+          <UsersSection
+            communityId={communityId}
+            members={members}
+            badges={badges}
+            onDone={refresh}
+          />
+        )}
+        {activeTab === "trophies" && isAdmin && (
+          <TrophiesSection
+            communityId={communityId}
+            trophies={trophies}
+            members={members}
+            onDone={refresh}
+          />
+        )}
         {activeTab === "controls" && isAdmin && (
           <ControlsSection
             communityId={communityId}
@@ -198,7 +235,420 @@ export function ManagementPanel({
             onDone={refresh}
           />
         )}
+        {activeTab === "theme" && isOwner && (
+          <ThemeSection
+            communityId={communityId}
+            currentTheme={currentTheme}
+            onDone={refresh}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+// ── Users Section (mentor+) ───────────────────────────────────────────────────
+
+function UsersSection({
+  communityId,
+  members,
+  badges,
+  onDone,
+}: {
+  communityId: string;
+  members: Member[];
+  badges: Badge[];
+  onDone: () => void;
+}) {
+  const [targetUserId, setTargetUserId] = useState(members[0]?.user_id ?? "");
+  const [xpAmount, setXpAmount] = useState("25");
+  const [selectedBadgeId, setSelectedBadgeId] = useState(badges[0]?.id ?? "");
+  const [creditsAmount, setCreditsAmount] = useState("100");
+  const [xpLoading, setXpLoading] = useState(false);
+  const [badgeLoading, setBadgeLoading] = useState(false);
+  const [creditsLoading, setCreditsLoading] = useState(false);
+  const [xpError, setXpError] = useState("");
+  const [badgeError, setBadgeError] = useState("");
+  const [creditsError, setCreditsError] = useState("");
+  const [xpSuccess, setXpSuccess] = useState("");
+  const [badgeSuccess, setBadgeSuccess] = useState("");
+  const [creditsSuccess, setCreditsSuccess] = useState("");
+
+  async function handleAwardXp(e: React.FormEvent) {
+    e.preventDefault();
+    setXpError("");
+    setXpSuccess("");
+    setXpLoading(true);
+    const amount = Number(xpAmount);
+    const res = await grantManualXp(communityId, targetUserId, amount);
+    if ("error" in res) setXpError((res as { error: string }).error);
+    else {
+      setXpSuccess(`Queued +${Math.floor(amount)} XP`);
+      onDone();
+    }
+    setXpLoading(false);
+  }
+
+  async function handleAwardBadge(e: React.FormEvent) {
+    e.preventDefault();
+    setBadgeError("");
+    setBadgeSuccess("");
+    setBadgeLoading(true);
+    const res = await awardUserBadge(communityId, selectedBadgeId, targetUserId);
+    if ("error" in res) setBadgeError((res as { error: string }).error);
+    else {
+      setBadgeSuccess("Badge awarded (+25 pending XP)");
+      onDone();
+    }
+    setBadgeLoading(false);
+  }
+
+  async function handleAwardCredits(e: React.FormEvent) {
+    e.preventDefault();
+    setCreditsError("");
+    setCreditsSuccess("");
+    setCreditsLoading(true);
+    const amount = Number(creditsAmount);
+    const res = await awardCurrency(communityId, targetUserId, amount, "manual");
+    if ("error" in res) setCreditsError((res as { error: string }).error);
+    else {
+      setCreditsSuccess(`+${amount} credits awarded`);
+      onDone();
+    }
+    setCreditsLoading(false);
+  }
+
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-white">Users</h2>
+        <p className="mt-0.5 text-xs text-gray-600">
+          Fast debug actions for mentor+ · queue manual XP and award badges directly
+        </p>
+      </div>
+
+      <div className="card p-5 space-y-4">
+        <div>
+          <label className="label">Target user</label>
+          <select
+            value={targetUserId}
+            onChange={(e) => setTargetUserId(e.target.value)}
+            className="input"
+          >
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {displayName(members, m.user_id)} ({m.role})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <form onSubmit={handleAwardXp} className="space-y-2">
+          <label className="label">Award XP</label>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="number"
+              min={1}
+              value={xpAmount}
+              onChange={(e) => setXpAmount(e.target.value)}
+              className="input w-32"
+            />
+            <button type="submit" disabled={xpLoading} className="btn-primary btn-sm">
+              {xpLoading ? "Queueing…" : "Queue XP"}
+            </button>
+            {[25, 50, 100, 250].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setXpAmount(String(v))}
+                className="btn-ghost btn-sm"
+              >
+                +{v}
+              </button>
+            ))}
+          </div>
+          {xpError && <p className="text-sm text-red-400">{xpError}</p>}
+          {xpSuccess && <p className="text-sm text-emerald-400">{xpSuccess}</p>}
+        </form>
+
+        <form onSubmit={handleAwardBadge} className="space-y-2">
+          <label className="label">Award Badge (medal)</label>
+          {badges.length === 0 ? (
+            <p className="text-sm text-gray-600">Create at least one badge first in the Badges tab.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={selectedBadgeId}
+                  onChange={(e) => setSelectedBadgeId(e.target.value)}
+                  className="input min-w-[240px]"
+                >
+                  {badges.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" disabled={badgeLoading} className="btn-primary btn-sm">
+                  {badgeLoading ? "Awarding…" : "Award Badge"}
+                </button>
+              </div>
+              {badgeError && <p className="text-sm text-red-400">{badgeError}</p>}
+              {badgeSuccess && <p className="text-sm text-emerald-400">{badgeSuccess}</p>}
+            </>
+          )}
+        </form>
+
+        <form onSubmit={handleAwardCredits} className="space-y-2">
+          <label className="label">Award Credits ◼</label>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="number"
+              min={1}
+              value={creditsAmount}
+              onChange={(e) => setCreditsAmount(e.target.value)}
+              className="input w-32"
+            />
+            <button type="submit" disabled={creditsLoading} className="btn-primary btn-sm">
+              {creditsLoading ? "Awarding…" : "Award Credits"}
+            </button>
+            {[50, 100, 250, 500].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setCreditsAmount(String(v))}
+                className="btn-ghost btn-sm"
+              >
+                +{v}
+              </button>
+            ))}
+          </div>
+          {creditsError && <p className="text-sm text-red-400">{creditsError}</p>}
+          {creditsSuccess && <p className="text-sm text-sky-400">{creditsSuccess}</p>}
+        </form>
+      </div>
+    </section>
+  );
+}
+
+// ── Trophies Section (admin/owner) ────────────────────────────────────────────
+
+function TrophiesSection({
+  communityId,
+  trophies,
+  members,
+  onDone,
+}: {
+  communityId: string;
+  trophies: TrophyWithAwards[];
+  members: Member[];
+  onDone: () => void;
+}) {
+  return (
+    <section className="space-y-6">
+      <div>
+        <h2 className="text-sm font-semibold text-white">Trophies</h2>
+        <p className="mt-0.5 text-xs text-gray-600">
+          Create custom trophies and award them to members. Trophy XP goes directly to career level.
+        </p>
+      </div>
+      <CreateTrophyForm communityId={communityId} onDone={onDone} />
+      {trophies.length > 0 && (
+        <div className="space-y-3">
+          {trophies.map((t) => (
+            <TrophyAdminCard key={t.id} trophy={t} members={members} onDone={onDone} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CreateTrophyForm({ communityId, onDone }: { communityId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [xpAward, setXpAward] = useState("100");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    const res = await createTrophy(communityId, {
+      name,
+      description: description || undefined,
+      xp_award: parseInt(xpAward) || 100,
+    });
+    if ("error" in res) setError((res as { error: string }).error);
+    else {
+      setName("");
+      setDescription("");
+      setXpAward("100");
+      setOpen(false);
+      onDone();
+    }
+    setLoading(false);
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="btn-primary btn-sm">
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+        New Trophy
+      </button>
+    );
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm font-semibold text-white">New Trophy</p>
+        <button onClick={() => setOpen(false)} className="text-gray-600 hover:text-gray-400 transition-colors">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Trophy name</label>
+            <input
+              type="text"
+              placeholder="e.g. Season Champion"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input"
+            />
+          </div>
+          <div>
+            <label className="label">Career XP award</label>
+            <input
+              type="number"
+              min={1}
+              value={xpAward}
+              onChange={(e) => setXpAward(e.target.value)}
+              className="input"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="label">Description <span className="text-gray-700">(optional)</span></label>
+          <input
+            type="text"
+            placeholder="What is this trophy for?"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="input"
+          />
+        </div>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={loading} className="btn-primary btn-sm">
+            {loading ? "Creating…" : "Create Trophy"}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className="btn-ghost btn-sm">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function TrophyAdminCard({
+  trophy,
+  members,
+  onDone,
+}: {
+  trophy: TrophyWithAwards;
+  members: Member[];
+  onDone: () => void;
+}) {
+  const [showAwardForm, setShowAwardForm] = useState(false);
+  const [recipientId, setRecipientId] = useState(members[0]?.user_id ?? "");
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function handleAward(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    const res = await awardTrophy(trophy.id, recipientId, notes || undefined);
+    if ("error" in res) setError((res as { error: string }).error);
+    else {
+      setSuccess(`Trophy awarded (+${trophy.xp_award} Career XP)`);
+      setNotes("");
+      setShowAwardForm(false);
+      onDone();
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-[#0f0f1a] px-5 py-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white">{trophy.name}</p>
+          {trophy.description && (
+            <p className="text-xs text-gray-600 truncate">{trophy.description}</p>
+          )}
+          <p className="text-[10px] text-amber-500 mt-0.5">+{trophy.xp_award} Career XP · {trophy.awards.length} awarded</p>
+        </div>
+        <button
+          onClick={() => setShowAwardForm((v) => !v)}
+          className="btn-ghost btn-sm text-xs shrink-0"
+        >
+          Award
+        </button>
+      </div>
+
+      {showAwardForm && (
+        <form onSubmit={handleAward} className="space-y-2 border-t border-white/[0.05] pt-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label text-xs">Member</label>
+              <select
+                value={recipientId}
+                onChange={(e) => setRecipientId(e.target.value)}
+                className="input py-1.5 text-sm"
+              >
+                {members.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.profiles?.display_name || m.user_id.slice(0, 8) + "…"} ({m.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs">Note <span className="text-gray-700">(optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. 1st place"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          {success && <p className="text-sm text-emerald-400">{success}</p>}
+          <div className="flex gap-2">
+            <button type="submit" disabled={loading} className="btn-primary btn-sm text-xs">
+              {loading ? "Awarding…" : "Confirm Award"}
+            </button>
+            <button type="button" onClick={() => setShowAwardForm(false)} className="btn-ghost btn-sm text-xs">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -236,7 +686,7 @@ function PermissionGate({
   return (
     <div className="rounded-xl border border-white/[0.07] bg-[#0f0f1a] flex flex-col items-center gap-4 py-14 text-center px-8">
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.05] text-2xl">
-        🔒
+        <Lock className="h-6 w-6 text-gray-500" />
       </div>
       <div>
         <p className="font-semibold text-white">{PERM_LABEL[permission]}</p>
@@ -427,7 +877,7 @@ function SeasonCard({
         <div>
           <p className="font-medium text-white">{season.name}</p>
           <p className="text-xs text-gray-600">
-            {new Date(season.starts_at).toLocaleDateString()} – {new Date(season.ends_at).toLocaleDateString()}
+            {season.starts_at.slice(0, 10)} – {season.ends_at.slice(0, 10)}
           </p>
         </div>
         {season.is_active ? (
@@ -446,7 +896,7 @@ function SeasonCard({
               className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2 text-sm"
             >
               <span className="text-gray-400">
-                Tier {t.tier_number}
+                Level {t.tier_number}
                 {t.reward_label ? ": " + t.reward_label : ""}
               </span>
               <span className="text-xs text-gray-600">{t.xp_required} XP</span>
@@ -458,7 +908,7 @@ function SeasonCard({
         <form onSubmit={handleAddTier} className="space-y-2">
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="label text-xs">Tier #</label>
+              <label className="label text-xs">Level #</label>
               <input
                 type="number"
                 placeholder="1"
@@ -495,7 +945,7 @@ function SeasonCard({
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={loading} className="btn-primary btn-sm text-xs">
-              {loading ? "…" : "Add Tier"}
+              {loading ? "…" : "Add Level"}
             </button>
             <button type="button" onClick={() => setShowTierForm(false)} className="btn-ghost btn-sm text-xs">
               Cancel
@@ -507,7 +957,7 @@ function SeasonCard({
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Tier
+          Add Level
         </button>
       )}
     </div>
@@ -540,7 +990,7 @@ function BadgesSection({
               className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-[#0f0f1a] px-4 py-3"
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-base">
-                🏅
+                <Medal className="h-4 w-4 text-violet-300" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white">{b.name}</p>
@@ -988,5 +1438,144 @@ function AdminActionRow({
         {loading ? "…" : action === "promote" ? "→ Admin" : "→ Mentor"}
       </button>
     </div>
+  );
+}
+
+// ── Theme Section (owner only) ─────────────────────────────────────────────────
+
+const THEME_META: Record<ThemeKey, { label: string; bg: string; accent: string; accent2: string }> = {
+  "ascnd":      { label: "ASCND Default", bg: "#06070b", accent: "#3be8ff", accent2: "#7dff74" },
+  "sky-high":   { label: "Sky High",      bg: "#03060d", accent: "#38bdf8", accent2: "#7dd3fc" },
+  "high-tide":  { label: "High Tide",     bg: "#02090c", accent: "#2dd4bf", accent2: "#34d399" },
+  "ruby":       { label: "Ruby",          bg: "#0a0305", accent: "#f87171", accent2: "#fb923c" },
+  "evergreen":  { label: "Evergreen",     bg: "#020a04", accent: "#4ade80", accent2: "#86efac" },
+  "saffron":    { label: "Saffron",       bg: "#080601", accent: "#fbbf24", accent2: "#fcd34d" },
+  "bloom":      { label: "Bloom",         bg: "#060408", accent: "#a78bfa", accent2: "#d946ef" },
+  "tangerine":  { label: "Tangerine",     bg: "#080502", accent: "#fb923c", accent2: "#fdba74" },
+};
+
+function ThemeSection({
+  communityId,
+  currentTheme,
+  onDone,
+}: {
+  communityId: string;
+  currentTheme: string;
+  onDone: () => void;
+}) {
+  const [selected, setSelected] = useState(currentTheme as ThemeKey);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function handleSelect(key: ThemeKey) {
+    setSelected(key);
+    setSaved(false);
+    setError("");
+  }
+
+  async function handleSave() {
+    setError("");
+    setSaved(false);
+    startTransition(async () => {
+      const res = await updateCommunityTheme(communityId, selected);
+      if ("error" in res) {
+        setError((res as { error: string }).error);
+      } else {
+        setSaved(true);
+        onDone();
+      }
+    });
+  }
+
+  return (
+    <section className="space-y-5 max-w-lg">
+      <div>
+        <h2 className="text-sm font-semibold text-white">Community Theme</h2>
+        <p className="mt-1 text-xs text-gray-500">
+          Choose a color palette for this community. Only visible to you until saved.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {THEME_KEYS.map((key) => {
+          const meta = THEME_META[key];
+          const isActive = selected === key;
+          return (
+            <button
+              key={key}
+              onClick={() => handleSelect(key)}
+              style={{
+                borderColor: isActive ? meta.accent : "rgba(255,255,255,0.08)",
+                boxShadow: isActive
+                  ? `0 0 0 1px ${meta.accent}55, 0 0 16px ${meta.accent}33`
+                  : "none",
+              }}
+              className="card flex flex-col items-center gap-2 p-3 cursor-pointer transition-all duration-150 hover:border-white/20"
+            >
+              {/* Color preview */}
+              <div
+                className="h-10 w-full overflow-hidden"
+                style={{ background: meta.bg, position: "relative" }}
+              >
+                {/* Accent stripe */}
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: "4px",
+                    background: `linear-gradient(90deg, ${meta.accent}, ${meta.accent2})`,
+                    boxShadow: `0 0 8px ${meta.accent}aa`,
+                  }}
+                />
+                {/* Accent dot */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: "12px",
+                    height: "12px",
+                    background: meta.accent,
+                    boxShadow: `0 0 10px ${meta.accent}cc`,
+                  }}
+                />
+              </div>
+              <span
+                className="text-[10px] font-semibold uppercase tracking-widest leading-tight text-center"
+                style={{ color: isActive ? meta.accent : "rgba(148,163,184,0.8)" }}
+              >
+                {meta.label}
+              </span>
+              {isActive && (
+                <span
+                  className="text-[9px] font-bold uppercase tracking-widest"
+                  style={{ color: meta.accent }}
+                >
+                  Selected
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={pending || selected === currentTheme}
+          className="btn-primary btn-sm"
+        >
+          {pending ? "Saving…" : "Save Theme"}
+        </button>
+        {saved && (
+          <span className="text-xs text-green-400">Theme saved! Reload to see it applied.</span>
+        )}
+        {error && <span className="text-xs text-red-400">{error}</span>}
+      </div>
+    </section>
   );
 }

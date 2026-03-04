@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { getCommunityBySlug, getMembership } from "@/lib/rbac";
+import { dicebearUrl } from "@/lib/dicebear";
+import { AvatarCustomizer } from "./avatar-customizer";
+import { getCareerMilestonesWithStatus } from "@/actions/career-milestones";
+import { getCareerLevel, getRankTitle } from "@/lib/gamification";
 
 const ROLE_BADGE: Record<string, string> = {
   owner: "badge-amber",
@@ -32,21 +36,34 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  const [{ data: xpRows }, { data: badgeAwards }] = await Promise.all([
+  const [{ data: xpRows }, { data: badgeAwards }, careerMilestones] = await Promise.all([
     supabase.from("xp_transactions").select("amount").eq("community_id", community.id).eq("user_id", userId),
     supabase.from("badge_awards").select("id, created_at, badges:badges(name, description, icon_url)").eq("community_id", community.id).eq("user_id", userId),
+    getCareerMilestonesWithStatus(userId),
   ]);
 
   const totalXp = (xpRows ?? []).reduce((s, r) => s + r.amount, 0);
   const isOwnProfile = userId === user.id;
+  const earnedMilestoneCount = careerMilestones.filter((m) => m.earned).length;
+  const careerLevel = getCareerLevel(totalXp);
+  const rankTitle = getRankTitle(careerLevel);
+  const avatarOpts = (profile as any).avatar_options ?? {};
 
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Profile header */}
       <div className="border-b border-white/[0.06] px-8 py-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600/20 text-xl font-bold text-indigo-300">
-            {(profile.display_name || "?").charAt(0).toUpperCase()}
+          <div
+            className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden"
+            style={{ background: `#${(profile as any).avatar_bg || "0b1020"}`, border: "1px solid rgba(59,232,255,0.2)" }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={dicebearUrl((profile as any).avatar_seed || userId, (profile as any).avatar_bg || "0b1020", 56, avatarOpts)}
+              alt={profile.display_name || "Avatar"}
+              className="h-12 w-12"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -62,7 +79,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
       </div>
 
       <div className="px-8 py-6 space-y-6">
-        {/* XP stat */}
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
           <div className="card px-5 py-4">
             <p className="text-xs font-medium text-gray-600">Total XP</p>
@@ -78,6 +95,15 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
           </div>
         </div>
 
+        {/* Avatar customizer — own profile only */}
+        {isOwnProfile && (
+          <AvatarCustomizer
+            initialSeed={(profile as any).avatar_seed || userId}
+            initialBg={(profile as any).avatar_bg || "0b1020"}
+            initialOpts={avatarOpts}
+          />
+        )}
+
         {/* Badges */}
         <section>
           <h2 className="mb-3 text-sm font-semibold text-white">Badges</h2>
@@ -92,7 +118,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {(badgeAwards ?? []).map((ba: any) => (
                 <div key={ba.id} className="card flex items-start gap-3 px-4 py-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600/15">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-indigo-600/15">
                     <svg className="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
                     </svg>
@@ -110,6 +136,33 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
               ))}
             </div>
           )}
+        </section>
+
+        {/* Career Path — full milestone progression grid */}
+        <section>
+          <div className="mb-1 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-white">Career Path</h2>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+              Level {careerLevel}{rankTitle ? ` · ${rankTitle}` : ""}
+            </span>
+          </div>
+          <p className="mb-3 text-xs text-gray-600">{earnedMilestoneCount} / {careerMilestones.length} milestones reached</p>
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 lg:grid-cols-8">
+            {careerMilestones.map((m) => (
+              <div
+                key={m.id}
+                className="card flex flex-col items-center gap-1.5 px-2 py-3 text-center"
+                style={{ opacity: m.earned ? 1 : 0.3 }}
+                title={m.earned ? `${m.name} — earned` : `${m.name} — reach Career Level ${m.level_required}`}
+              >
+                <span className="text-2xl leading-none" style={{ filter: m.earned ? "none" : "grayscale(1)" }}>
+                  {m.icon}
+                </span>
+                <p className="text-[9px] font-semibold text-white leading-tight line-clamp-1">{m.name}</p>
+                <p className="text-[8px] text-gray-700">Lvl {m.level_required}</p>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </div>

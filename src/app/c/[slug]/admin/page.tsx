@@ -9,6 +9,7 @@ import {
   type GrantablePermission,
 } from "@/lib/rbac";
 import { ManagementPanel } from "./admin-panel";
+import { listTrophiesWithAwards } from "@/actions/trophies";
 
 export default async function AdminPage({
   params,
@@ -52,7 +53,7 @@ export default async function AdminPage({
   }
 
   // Fetch core data in parallel (all community members can read these).
-  const [seasonsResult, badgesResult, membersResult] = await Promise.all([
+  const [seasonsResult, badgesResult, membersResult, trophies] = await Promise.all([
     supabase
       .from("seasons")
       .select("*, battle_pass_tiers(*)")
@@ -68,6 +69,7 @@ export default async function AdminPage({
       .select("id, user_id, role, profiles(display_name)")
       .eq("community_id", community.id)
       .order("role"),
+    listTrophiesWithAwards(community.id),
   ]);
 
   // Admin+ only: pending permission requests and active grants.
@@ -112,6 +114,7 @@ export default async function AdminPage({
       myPendingRequests={myPendingRequests}
       seasons={seasonsResult.data ?? []}
       badges={badgesResult.data ?? []}
+      trophies={trophies}
       members={
         (membersResult.data ?? []) as unknown as {
           id: string;
@@ -122,6 +125,7 @@ export default async function AdminPage({
       }
       permissionRequests={permissionRequests}
       grants={grants}
+      currentTheme={community.theme_key ?? "ascnd"}
     />
   );
 }
