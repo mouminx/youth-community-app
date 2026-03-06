@@ -379,9 +379,9 @@ export function XpClaimSection({ communityId, initialXp, initialCareerXp, initia
               {displayXp.toLocaleString()}
               <span className="ml-1 text-base font-semibold text-gray-600">XP</span>
             </p>
-            <p className={`mt-0.5 text-base font-bold tabular-nums transition-colors duration-300 ${phase === "animating" ? "text-amber-300" : "text-amber-400/80"}`}>
+            <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: "var(--neon-cyan)" }}>
               {displayCurrency.toLocaleString()}
-              <span className="ml-1 text-xs font-semibold text-gray-600">ascnd pts</span>
+              <span className="ml-1 text-xs font-semibold" style={{ color: "color-mix(in srgb, var(--neon-cyan) 55%, transparent)" }}>ascnd pts</span>
             </p>
             {nextTier ? (
               <p className="mt-0.5 text-xs text-gray-600">
@@ -561,7 +561,7 @@ export function XpClaimSection({ communityId, initialXp, initialCareerXp, initia
           </div>
           <div>
             <p className="font-semibold text-white">+{pendingTotal} XP collected!</p>
-            <p className="text-xs text-amber-400/80">+{Math.floor(pendingTotal / 2)} ascnd pts earned</p>
+            <p className="text-xs" style={{ color: "var(--neon-cyan)" }}>+{Math.floor(pendingTotal / 2)} ascnd pts earned</p>
           </div>
         </div>
       )}

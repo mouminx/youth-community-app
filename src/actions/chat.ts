@@ -8,7 +8,7 @@ export async function listChannels(communityId: string) {
   const supabase = await getSupabaseServerClient();
   const { data } = await supabase
     .from("channels")
-    .select("id, name, created_at")
+    .select("id, name, read_only, created_at")
     .eq("community_id", communityId)
     .order("created_at", { ascending: true });
   return data ?? [];

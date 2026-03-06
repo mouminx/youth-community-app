@@ -27,6 +27,8 @@ export default async function ChannelChatPage({
 
   const currentChannel = channels.find((c) => c.id === channelId);
   const isMentor = meetsRole(membership.role, "mentor");
+  const isAdmin = meetsRole(membership.role, "admin");
+  const isReadOnly = (currentChannel as any)?.read_only ?? false;
 
   return (
     <ChatView
@@ -37,6 +39,8 @@ export default async function ChannelChatPage({
       communityId={community.id}
       userId={user.id}
       isMentor={isMentor}
+      isAdmin={isAdmin}
+      isReadOnly={isReadOnly}
       slug={slug}
     />
   );

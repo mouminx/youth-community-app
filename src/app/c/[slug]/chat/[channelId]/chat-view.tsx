@@ -16,6 +16,7 @@ type Message = {
 type Channel = {
   id: string;
   name: string;
+  read_only?: boolean;
 };
 
 export function ChatView({
@@ -26,6 +27,8 @@ export function ChatView({
   communityId,
   userId,
   isMentor,
+  isAdmin,
+  isReadOnly,
   slug,
 }: {
   channels: Channel[];
@@ -35,11 +38,14 @@ export function ChatView({
   communityId: string;
   userId: string;
   isMentor: boolean;
+  isAdmin: boolean;
+  isReadOnly: boolean;
   slug: string;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [showChannelList, setShowChannelList] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -103,7 +109,7 @@ export function ChatView({
   return (
     <div className="flex h-full overflow-hidden">
       {/* Channel list sidebar (within chat page) */}
-      <aside className="w-44 shrink-0 border-r border-white/[0.06] overflow-y-auto">
+      <aside className={`w-44 shrink-0 border-r border-white/[0.06] overflow-y-auto ${showChannelList ? "flex flex-col" : "hidden"} md:flex md:flex-col`}>
         <div className="px-3 py-3">
           <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-gray-700">Channels</p>
           {channels.map((ch) => (
@@ -117,7 +123,12 @@ export function ChatView({
               )}
             >
               <span className="text-gray-600">#</span>
-              {ch.name}
+              <span className="flex-1 truncate">{ch.name}</span>
+              {ch.read_only && (
+                <svg className="h-3 w-3 shrink-0 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              )}
             </Link>
           ))}
         </div>
@@ -127,6 +138,16 @@ export function ChatView({
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-white/[0.06] px-5 py-3.5">
+          <button
+            type="button"
+            onClick={() => setShowChannelList((v) => !v)}
+            className="flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-white/[0.06] hover:text-gray-300 transition-colors md:hidden"
+            aria-label="Toggle channel list"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+            </svg>
+          </button>
           <span className="text-gray-600">#</span>
           <h3 className="text-sm font-semibold text-white">{currentChannelName}</h3>
         </div>
@@ -185,26 +206,37 @@ export function ChatView({
 
         {/* Input */}
         <div className="border-t border-white/[0.06] px-5 py-3">
-          <form onSubmit={handleSend}>
-            <div className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-[#18181f] px-4 py-2.5">
-              <input
-                type="text"
-                placeholder={"Message #" + currentChannelName}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="flex-1 bg-transparent text-sm text-white placeholder-gray-700 outline-none"
-              />
-              <button
-                type="submit"
-                disabled={sending || !input.trim()}
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
-              >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
+          {isReadOnly && !isAdmin ? (
+            <div className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-2.5">
+              <svg className="h-3.5 w-3.5 shrink-0 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span className="text-xs text-gray-700">
+                #{currentChannelName} is read-only — only admins can post here
+              </span>
             </div>
-          </form>
+          ) : (
+            <form onSubmit={handleSend}>
+              <div className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-[#18181f] px-4 py-2.5">
+                <input
+                  type="text"
+                  placeholder={"Message #" + currentChannelName}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-white placeholder-gray-700 outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={sending || !input.trim()}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

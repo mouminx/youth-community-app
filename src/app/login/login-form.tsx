@@ -3,13 +3,21 @@
 import { useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
+type Mode = "login" | "signup" | "forgot";
+
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<Mode>("login");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function switchMode(m: Mode) {
+    setMode(m);
+    setError("");
+    setMessage("");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,17 +27,39 @@ export function LoginForm() {
 
     const supabase = getSupabaseBrowserClient();
 
-    if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({ email, password });
+    if (mode === "forgot") {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
       if (error) setError(error.message);
-      else setMessage("Check your email for a confirmation link.");
+      else setMessage("Check your email for a password reset link.");
+    } else if (mode === "signup") {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setError(error.message);
+      } else if (data.user && data.user.identities?.length === 0) {
+        // Supabase silently "succeeds" for existing emails — detect via empty identities
+        setError("An account with this email already exists. Try signing in instead.");
+      } else if (data.session) {
+        // Email confirmation is disabled — user is immediately active
+        window.location.href = "/communities";
+      } else {
+        setMessage("Check your email for a confirmation link.");
+      }
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setError(error.message);
       else window.location.href = "/communities";
     }
+
     setLoading(false);
   }
+
+  const titles: Record<Mode, { heading: string; sub: string }> = {
+    login:  { heading: "Welcome back",        sub: "Sign in to access your communities" },
+    signup: { heading: "Create your account", sub: "Join the platform and start earning XP" },
+    forgot: { heading: "Reset your password", sub: "We'll send a reset link to your email" },
+  };
 
   return (
     <div className="w-full max-w-md">
@@ -40,14 +70,8 @@ export function LoginForm() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-white">
-          {mode === "login" ? "Welcome back" : "Create your account"}
-        </h1>
-        <p className="mt-1.5 text-sm text-gray-500">
-          {mode === "login"
-            ? "Sign in to access your communities"
-            : "Join the platform and start earning XP"}
-        </p>
+        <h1 className="text-2xl font-bold text-white">{titles[mode].heading}</h1>
+        <p className="mt-1.5 text-sm text-gray-500">{titles[mode].sub}</p>
       </div>
 
       <div className="card p-6">
@@ -64,19 +88,33 @@ export function LoginForm() {
               className="input"
             />
           </div>
-          <div>
-            <label className="label" htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="input"
-            />
-          </div>
+
+          {mode !== "forgot" && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="label mb-0" htmlFor="password">Password</label>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5">
@@ -95,21 +133,36 @@ export function LoginForm() {
           <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
             {loading ? (
               <span className="flex items-center gap-2">
-                <Spinner /> {mode === "login" ? "Signing in…" : "Creating account…"}
+                <Spinner />
+                {mode === "login" ? "Signing in…" : mode === "signup" ? "Creating account…" : "Sending link…"}
               </span>
-            ) : mode === "login" ? "Sign in" : "Create account"}
+            ) : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
           </button>
         </form>
 
         <div className="mt-5 text-center text-sm text-gray-500">
-          {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-          <button
-            type="button"
-            onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setMessage(""); }}
-            className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            {mode === "login" ? "Sign up" : "Sign in"}
-          </button>
+          {mode === "forgot" ? (
+            <>
+              Remember your password?{" "}
+              <button type="button" onClick={() => switchMode("login")} className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+                Sign in
+              </button>
+            </>
+          ) : mode === "login" ? (
+            <>
+              Don&apos;t have an account?{" "}
+              <button type="button" onClick={() => switchMode("signup")} className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button type="button" onClick={() => switchMode("login")} className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+                Sign in
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
