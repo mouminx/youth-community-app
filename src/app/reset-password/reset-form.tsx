@@ -16,44 +16,41 @@ export function ResetPasswordForm() {
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-    let handled = false;
 
-    function succeed() {
-      if (handled) return;
-      handled = true;
-      setReady(true);
-      setVerifying(false);
-    }
-    function fail() {
-      if (handled) return;
-      handled = true;
-      setError("This link is invalid or has expired. Please request a new one.");
-      setVerifying(false);
-    }
+    // Primary: session was already exchanged by /auth/callback before this page loaded
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setReady(true);
+        setVerifying(false);
+        return;
+      }
 
-    // Method 1: listen for PASSWORD_RECOVERY event (hash-based / implicit flow)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") succeed();
-    });
+      // Fallback A: token_hash in URL (implicit/non-PKCE flow)
+      const token_hash = searchParams.get("token_hash");
+      const type = searchParams.get("type");
+      if (token_hash && type === "recovery") {
+        supabase.auth.verifyOtp({ token_hash, type: "recovery" }).then(({ error }) => {
+          setVerifying(false);
+          if (error) setError("This link is invalid or has expired. Please request a new one.");
+          else setReady(true);
+        });
+        return;
+      }
 
-    // Method 2: token_hash query param (PKCE flow)
-    const token_hash = searchParams.get("token_hash");
-    const type = searchParams.get("type");
-
-    if (token_hash && type === "recovery") {
-      supabase.auth.verifyOtp({ token_hash, type: "recovery" }).then(({ error }) => {
-        if (error) fail(); else succeed();
+      // Fallback B: PASSWORD_RECOVERY event (hash-based implicit flow)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setReady(true);
+          setVerifying(false);
+          subscription.unsubscribe();
+        }
       });
-    } else {
-      // No token_hash — rely on PASSWORD_RECOVERY event; timeout after 5s
-      const timer = setTimeout(fail, 5000);
-      return () => {
-        clearTimeout(timer);
+      setTimeout(() => {
+        setVerifying(false);
+        setError("This link is invalid or has expired. Please request a new one.");
         subscription.unsubscribe();
-      };
-    }
-
-    return () => subscription.unsubscribe();
+      }, 5000);
+    });
   }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
