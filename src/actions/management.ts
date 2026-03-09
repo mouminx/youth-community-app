@@ -315,6 +315,36 @@ export async function demoteAdmin(
   return { data: { success: true } };
 }
 
+// ── Name Display Mode (owner only) ────────────────────────────────────────────
+
+export async function updateNameDisplayMode(
+  communityId: string,
+  mode: string
+): Promise<{ data: { success: true } } | { error: string }> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const valid = ["username", "full_name", "first_last_initial", "custom"];
+  if (!valid.includes(mode)) return { error: "Invalid display mode" };
+
+  try {
+    await requireRole(supabase, communityId, user.id, "owner");
+  } catch {
+    return { error: "Only the owner can change the name display mode" };
+  }
+
+  const { error } = await supabase
+    .from("communities")
+    .update({ name_display_mode: mode })
+    .eq("id", communityId);
+  if (error) return { error: error.message };
+
+  return { data: { success: true } };
+}
+
 // ── Channel Management ─────────────────────────────────────────────────────────
 
 export async function createChannel(

@@ -241,7 +241,7 @@ export function SidebarNav({
 
       <SidebarSection label="Ladder" />
       <NavLink href={`${base}/leaderboard`} icon={<Icon.ChevronDoubleUp />} active={isActive(`${base}/leaderboard`)} color="var(--neon-amber)">
-        Leaderboard
+        Ladder
       </NavLink>
       <NavLink
         href={`${base}/battlepass`}
@@ -250,7 +250,7 @@ export function SidebarNav({
         badge={counts.hasPendingXp ? <XpBadge /> : undefined}
         color="var(--neon-amber)"
       >
-        Ladder
+        Seasonal Climb
       </NavLink>
       <NavLink href={`${base}/badges`} icon={<Icon.Medal />} active={isActive(`${base}/badges`)} color="var(--neon-pink)">
         Badges

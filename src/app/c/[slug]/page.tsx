@@ -120,8 +120,8 @@ export default async function CommunityDashboard({ params }: { params: Promise<{
           <h2 className="mb-4 text-sm font-semibold text-white">Quick Access</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { href: `${base}/leaderboard`, label: "Leaderboard", color: "amber" },
-              { href: `${base}/battlepass`, label: "Battle Pass", color: "indigo" },
+              { href: `${base}/leaderboard`, label: "Ladder", color: "amber" },
+              { href: `${base}/battlepass`, label: "Seasonal Climb", color: "indigo" },
               { href: `${base}/events`, label: "Events", color: "emerald" },
               { href: `${base}/profile/${user.id}`, label: "My Profile", color: "purple" },
             ].map((item) => (

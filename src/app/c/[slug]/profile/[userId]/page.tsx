@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { getCommunityBySlug, getMembership } from "@/lib/rbac";
 import { dicebearUrl } from "@/lib/dicebear";
 import { AvatarCustomizer } from "./avatar-customizer";
+import { ProfileEditor } from "./profile-editor";
 import { getCareerMilestonesWithStatus } from "@/actions/career-milestones";
 import { getCareerLevel, getRankTitle } from "@/lib/gamification";
 
@@ -13,8 +14,15 @@ const ROLE_BADGE: Record<string, string> = {
   member: "badge-gray",
 };
 
-export default async function ProfilePage({ params }: { params: Promise<{ slug: string; userId: string }> }) {
+export default async function ProfilePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string; userId: string }>;
+  searchParams: Promise<{ setup?: string }>;
+}) {
   const { slug, userId } = await params;
+  const { setup } = await searchParams;
   const supabase = await getSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -24,7 +32,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
   if (!viewerMembership) redirect("/c/" + slug);
 
   const [{ data: profile }, membership] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", userId).single(),
+    supabase.from("profiles").select("id, display_name, avatar_seed, avatar_bg, avatar_options, first_name, last_name, username").eq("id", userId).single(),
     getMembership(supabase, community.id, userId),
   ]);
 
@@ -94,6 +102,17 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             <p className="mt-2 text-lg font-bold text-white capitalize">{membership.role}</p>
           </div>
         </div>
+
+        {/* Identity editor — own profile only */}
+        {isOwnProfile && (
+          <ProfileEditor
+            initialUsername={(profile as any).username ?? ""}
+            initialFirstName={(profile as any).first_name ?? ""}
+            initialLastName={(profile as any).last_name ?? ""}
+            initialDisplayName={profile.display_name ?? ""}
+            setup={setup === "1"}
+          />
+        )}
 
         {/* Avatar customizer — own profile only */}
         {isOwnProfile && (

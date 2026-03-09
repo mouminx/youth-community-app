@@ -116,7 +116,7 @@ function LevelUpModal({ event, onDismiss }: { event: LevelUpEvent; onDismiss: ()
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  const label = event.type === "ladder" ? "Ladder Level" : "Career Level";
+  const label = event.type === "ladder" ? "Climb Level" : "Career Level";
   const color = event.type === "ladder" ? "var(--neon-lime)" : "var(--neon-cyan)";
 
   return (
@@ -358,7 +358,7 @@ export function XpClaimSection({ communityId, initialXp, initialCareerXp, initia
         <div className="xp-card-content mb-5 flex items-end justify-between gap-4">
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-semibold uppercase tracking-widest text-gray-500 leading-none mb-1.5">
-              Ladder Level
+              Climb Level
             </span>
             <span
               key={currentClimbLevel}

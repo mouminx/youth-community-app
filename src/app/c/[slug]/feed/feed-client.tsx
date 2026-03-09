@@ -68,32 +68,25 @@ function PostCard({
   onToggle: (postId: string, emoji: string) => void;
 }) {
   const preview = post.body.length > 220 ? post.body.slice(0, 220) + "…" : post.body;
+  const href = `/c/${slug}/feed/${post.id}`;
 
   return (
-    <div className="card p-5">
+    <div className="card p-5 relative">
+      {/* Invisible overlay link makes the whole card tappable */}
+      <Link href={href} className="absolute inset-0" aria-label={post.title} />
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/c/${slug}/feed/${post.id}`}
-            className="block text-base font-semibold text-white hover:text-[#9dfff4] transition-colors"
-          >
-            {post.title}
-          </Link>
+          <p className="block text-base font-semibold text-white">{post.title}</p>
           <p className="mt-0.5 text-xs text-gray-600">
-            {post.author_name} · {timeAgo(post.created_at)}
+            {post.author_name}{post.author_id === currentUserId && <span className="text-gray-700"> (you)</span>} · {timeAgo(post.created_at)}
           </p>
         </div>
       </div>
       <p className="mt-3 text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">{preview}</p>
-      {post.body.length > 220 && (
-        <Link
-          href={`/c/${slug}/feed/${post.id}`}
-          className="mt-1 text-xs text-gray-600 hover:text-[#9dfff4] transition-colors"
-        >
-          Read more →
-        </Link>
-      )}
-      <ReactionBar post={post} currentUserId={currentUserId} onToggle={onToggle} />
+      {/* Reaction bar sits above the overlay link */}
+      <div className="relative z-10">
+        <ReactionBar post={post} currentUserId={currentUserId} onToggle={onToggle} />
+      </div>
     </div>
   );
 }

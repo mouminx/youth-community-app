@@ -121,6 +121,107 @@ export async function setActiveSeason(communityId: string, seasonId: string) {
   return { data: { success: true } };
 }
 
+// ── Update season name/dates (manage_seasons) ──────────────────
+export async function updateSeason(
+  communityId: string,
+  seasonId: string,
+  payload: { name: string; starts_at: string; ends_at: string }
+) {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_seasons");
+  } catch {
+    return { error: "Requires manage_seasons permission" };
+  }
+
+  const { error } = await supabase
+    .from("seasons")
+    .update({
+      name: payload.name,
+      starts_at: payload.starts_at,
+      ends_at: payload.ends_at,
+    })
+    .eq("id", seasonId)
+    .eq("community_id", communityId);
+
+  if (error) return { error: error.message };
+  return { data: { success: true } };
+}
+
+// ── Configure season levels (manage_seasons) ───────────────────
+// Append-only: creates levels from (current_count + 1) to maxLevel.
+// All levels have uniform xp_required = tier_number * xpPerLevel.
+// xpPerLevel cannot be changed once any tiers exist.
+export async function configureSeasonLevels(
+  communityId: string,
+  seasonId: string,
+  maxLevel: number,
+  xpPerLevel: number
+) {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  try {
+    await requirePermission(supabase, communityId, user.id, "manage_seasons");
+  } catch {
+    return { error: "Requires manage_seasons permission" };
+  }
+
+  const { data: season } = await supabase
+    .from("seasons")
+    .select("id")
+    .eq("id", seasonId)
+    .eq("community_id", communityId)
+    .single();
+  if (!season) return { error: "Season not found in this community" };
+
+  // Get existing tiers to determine current max and xp step.
+  const { data: existingTiers } = await supabase
+    .from("battle_pass_tiers")
+    .select("tier_number, xp_required")
+    .eq("season_id", seasonId)
+    .order("tier_number", { ascending: true });
+
+  const currentMax = existingTiers && existingTiers.length > 0
+    ? Math.max(...existingTiers.map((t) => t.tier_number))
+    : 0;
+
+  if (maxLevel <= currentMax) {
+    return { error: `Level count can only be increased (current: ${currentMax})` };
+  }
+
+  // If tiers exist, validate xpPerLevel matches the existing step.
+  if (existingTiers && existingTiers.length > 0) {
+    const existingStep = Math.round(existingTiers[0].xp_required / existingTiers[0].tier_number);
+    if (existingStep !== xpPerLevel) {
+      return { error: `XP per level cannot be changed (currently ${existingStep})` };
+    }
+  }
+
+  // Insert new tiers from (currentMax + 1) to maxLevel.
+  const newTiers = [];
+  for (let n = currentMax + 1; n <= maxLevel; n++) {
+    newTiers.push({
+      season_id: seasonId,
+      tier_number: n,
+      xp_required: n * xpPerLevel,
+      reward_label: "",
+    });
+  }
+
+  const { error } = await supabase.from("battle_pass_tiers").insert(newTiers);
+  if (error) return { error: error.message };
+  return { data: { success: true } };
+}
+
 // ── Create battle pass tier (admin+) ───────────────────────────
 export async function createBattlePassTier(
   communityId: string,

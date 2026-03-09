@@ -35,7 +35,7 @@ export function LeaderboardTabs({
       <div className="border-b border-white/[0.06] px-8 py-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-white">Leaderboard</h1>
+            <h1 className="text-lg font-semibold text-white">Ladder</h1>
             <p className="mt-0.5 text-sm text-gray-600">Top XP earners in this community</p>
           </div>
           <div className="flex rounded-lg border border-white/[0.07] overflow-hidden">

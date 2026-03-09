@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createSeason, setActiveSeason, createBattlePassTier } from "@/actions/battlepass";
+import { createSeason, setActiveSeason, updateSeason, configureSeasonLevels } from "@/actions/battlepass";
+import { createInviteCode, deactivateInviteCode } from "@/actions/invites";
 import { createBadge } from "@/actions/badges";
 import { createTrophy, awardTrophy, type TrophyWithAwards } from "@/actions/trophies";
 import { awardCurrency } from "@/actions/currency";
@@ -17,6 +18,7 @@ import {
   demoteAdmin,
   grantManualXp,
   awardUserBadge,
+  updateNameDisplayMode,
 } from "@/actions/management";
 import type { CommunityRole, GrantablePermission } from "@/lib/rbac";
 
@@ -99,13 +101,25 @@ interface Props {
   trophies: TrophyWithAwards[];
   permissionRequests: PermReq[];
   grants: Grant[];
+  inviteCodes: InviteCode[];
   currentTheme: string;
+  currentDisplayMode: string;
 }
 
-type TabId = "seasons" | "badges" | "members" | "users" | "trophies" | "controls" | "theme";
+type InviteCode = {
+  id: string;
+  code: string;
+  label: string | null;
+  use_count: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+type TabId = "seasons" | "badges" | "members" | "users" | "trophies" | "controls" | "invites" | "theme";
 
 export function ManagementPanel({
   communityId,
+  slug,
   role,
   grantedPermissions,
   myPendingRequests,
@@ -115,7 +129,9 @@ export function ManagementPanel({
   trophies,
   permissionRequests,
   grants,
+  inviteCodes,
   currentTheme,
+  currentDisplayMode,
 }: Props) {
   const router = useRouter();
   const isAdmin = role === "owner" || role === "admin";
@@ -129,6 +145,7 @@ export function ManagementPanel({
     { id: "users", label: "Users" },
     ...(isAdmin ? [{ id: "trophies" as TabId, label: "Trophies" }] : []),
     ...(isAdmin ? [{ id: "controls" as TabId, label: "Controls" }] : []),
+    ...(isAdmin ? [{ id: "invites" as TabId, label: "Invites" }] : []),
     ...(isOwner ? [{ id: "theme" as TabId, label: "Theme" }] : []),
   ];
 
@@ -235,12 +252,22 @@ export function ManagementPanel({
             onDone={refresh}
           />
         )}
+        {activeTab === "invites" && isAdmin && (
+          <InvitesSection communityId={communityId} slug={slug} inviteCodes={inviteCodes} onDone={refresh} />
+        )}
         {activeTab === "theme" && isOwner && (
-          <ThemeSection
-            communityId={communityId}
-            currentTheme={currentTheme}
-            onDone={refresh}
-          />
+          <div className="space-y-6">
+            <ThemeSection
+              communityId={communityId}
+              currentTheme={currentTheme}
+              onDone={refresh}
+            />
+            <DisplayModeSection
+              communityId={communityId}
+              currentDisplayMode={currentDisplayMode}
+              onDone={refresh}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -834,12 +861,25 @@ function SeasonCard({
   communityId: string;
   onDone: () => void;
 }) {
-  const [tierNum, setTierNum] = useState("");
-  const [xpReq, setXpReq] = useState("");
-  const [reward, setReward] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showTierForm, setShowTierForm] = useState(false);
+
+  // Edit season details
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(season.name);
+  const [editStart, setEditStart] = useState(season.starts_at.slice(0, 10));
+  const [editEnd, setEditEnd] = useState(season.ends_at.slice(0, 10));
+
+  // Configure levels
+  const [showLevelForm, setShowLevelForm] = useState(false);
+  const [maxLevel, setMaxLevel] = useState("");
+  const [xpPerLevel, setXpPerLevel] = useState("");
+
+  const sortedTiers = [...season.battle_pass_tiers].sort((a, b) => a.tier_number - b.tier_number);
+  const currentMax = sortedTiers.length > 0 ? sortedTiers[sortedTiers.length - 1].tier_number : 0;
+  const existingXpPerLevel = sortedTiers.length > 0
+    ? Math.round(sortedTiers[0].xp_required / sortedTiers[0].tier_number)
+    : null;
 
   async function handleActivate() {
     setLoading(true);
@@ -849,118 +889,293 @@ function SeasonCard({
     setLoading(false);
   }
 
-  async function handleAddTier(e: React.FormEvent) {
+  async function handleEditSave(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const res = await createBattlePassTier(communityId, season.id, {
-      tier_number: parseInt(tierNum),
-      xp_required: parseInt(xpReq),
-      reward_label: reward,
+    const res = await updateSeason(communityId, season.id, {
+      name: editName,
+      starts_at: new Date(editStart).toISOString(),
+      ends_at: new Date(editEnd).toISOString(),
     });
     if ("error" in res) setError((res as { error: string }).error);
-    else {
-      setTierNum("");
-      setXpReq("");
-      setReward("");
-      setShowTierForm(false);
-      onDone();
-    }
+    else { setEditing(false); onDone(); }
     setLoading(false);
   }
 
-  const sortedTiers = [...season.battle_pass_tiers].sort((a, b) => a.tier_number - b.tier_number);
+  async function handleConfigureLevels(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    const effectiveXpPerLevel = existingXpPerLevel !== null ? existingXpPerLevel : parseInt(xpPerLevel);
+    const res = await configureSeasonLevels(
+      communityId,
+      season.id,
+      parseInt(maxLevel),
+      effectiveXpPerLevel
+    );
+    if ("error" in res) setError((res as { error: string }).error);
+    else { setMaxLevel(""); setXpPerLevel(""); setShowLevelForm(false); onDone(); }
+    setLoading(false);
+  }
 
   return (
     <div className="card p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="font-medium text-white">{season.name}</p>
-          <p className="text-xs text-gray-600">
-            {season.starts_at.slice(0, 10)} – {season.ends_at.slice(0, 10)}
-          </p>
-        </div>
-        {season.is_active ? (
-          <span className="badge bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20">Active</span>
+      {/* Header row */}
+      <div className="mb-3 flex items-start justify-between gap-2">
+        {editing ? (
+          <form onSubmit={handleEditSave} className="flex-1 space-y-2">
+            <input
+              type="text"
+              required
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="input py-1.5 text-sm"
+              placeholder="Season name"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="date" required value={editStart} onChange={(e) => setEditStart(e.target.value)} className="input py-1.5 text-sm" />
+              <input type="date" required value={editEnd} onChange={(e) => setEditEnd(e.target.value)} className="input py-1.5 text-sm" />
+            </div>
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={loading} className="btn-primary btn-sm text-xs">{loading ? "…" : "Save"}</button>
+              <button type="button" onClick={() => { setEditing(false); setError(""); }} className="btn-ghost btn-sm text-xs">Cancel</button>
+            </div>
+          </form>
         ) : (
-          <button onClick={handleActivate} disabled={loading} className="btn-ghost btn-sm text-xs">
-            Set Active
-          </button>
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-white">{season.name}</p>
+            <p className="text-xs text-gray-600">
+              {season.starts_at.slice(0, 10)} – {season.ends_at.slice(0, 10)}
+            </p>
+          </div>
+        )}
+        {!editing && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => { setEditing(true); setError(""); }}
+              className="btn-ghost btn-sm text-xs"
+            >
+              Edit
+            </button>
+            {season.is_active ? (
+              <span className="badge bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20">Active</span>
+            ) : (
+              <button onClick={handleActivate} disabled={loading} className="btn-ghost btn-sm text-xs">
+                Set Active
+              </button>
+            )}
+          </div>
         )}
       </div>
-      {sortedTiers.length > 0 && (
+
+      {/* Levels list */}
+      {sortedTiers.length > 0 ? (
         <div className="mb-3 space-y-1">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-xs font-medium text-gray-500">
+              {currentMax} level{currentMax !== 1 ? "s" : ""} · {existingXpPerLevel} XP each
+            </p>
+            <p className="text-xs text-gray-700">
+              +{Math.floor((existingXpPerLevel ?? 0) * 1.5)} pts per level
+            </p>
+          </div>
           {sortedTiers.map((t) => (
             <div
               key={t.id}
-              className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2 text-sm"
+              className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-1.5 text-sm"
             >
-              <span className="text-gray-400">
-                Level {t.tier_number}
-                {t.reward_label ? ": " + t.reward_label : ""}
-              </span>
-              <span className="text-xs text-gray-600">{t.xp_required} XP</span>
+              <span className="text-gray-400">Level {t.tier_number}</span>
+              <span className="text-xs text-gray-600">{t.xp_required} XP total</span>
             </div>
           ))}
         </div>
+      ) : (
+        <p className="mb-3 text-xs text-gray-700">No levels configured yet.</p>
       )}
-      {showTierForm ? (
-        <form onSubmit={handleAddTier} className="space-y-2">
-          <div className="grid grid-cols-3 gap-2">
+
+      {/* Configure levels */}
+      {showLevelForm ? (
+        <form onSubmit={handleConfigureLevels} className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="label text-xs">Level #</label>
+              <label className="label text-xs">Max levels</label>
               <input
                 type="number"
-                placeholder="1"
+                placeholder={currentMax > 0 ? `> ${currentMax}` : "e.g. 10"}
+                required
+                min={currentMax + 1}
+                value={maxLevel}
+                onChange={(e) => setMaxLevel(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="label text-xs">XP per level</label>
+              <input
+                type="number"
+                placeholder="e.g. 100"
                 required
                 min={1}
-                value={tierNum}
-                onChange={(e) => setTierNum(e.target.value)}
-                className="input py-1.5 text-sm"
+                value={existingXpPerLevel !== null ? existingXpPerLevel.toString() : xpPerLevel}
+                onChange={(e) => { if (existingXpPerLevel === null) setXpPerLevel(e.target.value); }}
+                readOnly={existingXpPerLevel !== null}
+                className={`input py-1.5 text-sm ${existingXpPerLevel !== null ? "opacity-50 cursor-not-allowed" : ""}`}
               />
-            </div>
-            <div>
-              <label className="label text-xs">XP required</label>
-              <input
-                type="number"
-                placeholder="100"
-                required
-                min={0}
-                value={xpReq}
-                onChange={(e) => setXpReq(e.target.value)}
-                className="input py-1.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="label text-xs">Reward</label>
-              <input
-                type="text"
-                placeholder="Badge, Role…"
-                value={reward}
-                onChange={(e) => setReward(e.target.value)}
-                className="input py-1.5 text-sm"
-              />
+              {existingXpPerLevel !== null && (
+                <p className="mt-1 text-xs text-gray-700">Locked after first configuration</p>
+              )}
             </div>
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={loading} className="btn-primary btn-sm text-xs">
-              {loading ? "…" : "Add Level"}
+              {loading ? "…" : "Save Levels"}
             </button>
-            <button type="button" onClick={() => setShowTierForm(false)} className="btn-ghost btn-sm text-xs">
+            <button type="button" onClick={() => { setShowLevelForm(false); setError(""); }} className="btn-ghost btn-sm text-xs">
               Cancel
             </button>
           </div>
         </form>
       ) : (
-        <button onClick={() => setShowTierForm(true)} className="btn-ghost btn-sm text-xs">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Level
-        </button>
+        !editing && (
+          <button onClick={() => setShowLevelForm(true)} className="btn-ghost btn-sm text-xs">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            {currentMax > 0 ? "Add More Levels" : "Configure Levels"}
+          </button>
+        )
       )}
     </div>
+  );
+}
+
+// ── Invites Section ────────────────────────────────────────────────────────────
+
+function InvitesSection({
+  communityId,
+  slug,
+  inviteCodes,
+  onDone,
+}: {
+  communityId: string;
+  slug: string;
+  inviteCodes: InviteCode[];
+  onDone: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setError("");
+    const res = await createInviteCode(communityId, label || undefined);
+    if ("error" in res) setError((res as { error: string }).error);
+    else { setLabel(""); onDone(); }
+    setCreating(false);
+  }
+
+  async function handleDeactivate(id: string) {
+    startTransition(async () => {
+      await deactivateInviteCode(communityId, id);
+      onDone();
+    });
+  }
+
+  function handleCopy(code: InviteCode) {
+    const url = `${baseUrl}/join/${code.code}?ngrok-skip-browser-warning=1`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(code.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  }
+
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-white">Invite Links</h2>
+        <p className="mt-0.5 text-xs text-gray-600">
+          Share a link to let anyone join as a member. Deactivate codes at any time.
+        </p>
+      </div>
+
+      {/* Create form */}
+      <form onSubmit={handleCreate} className="flex items-end gap-2">
+        <div className="flex-1">
+          <label className="label">Label (optional)</label>
+          <input
+            type="text"
+            placeholder="e.g. Discord post, Flyer"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="input"
+          />
+        </div>
+        <button type="submit" disabled={creating} className="btn-primary btn-sm shrink-0">
+          {creating ? "Creating…" : "Generate Link"}
+        </button>
+      </form>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {/* Code list */}
+      {inviteCodes.length === 0 ? (
+        <p className="text-sm text-gray-600">No invite links yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {inviteCodes.map((inv) => (
+            <div
+              key={inv.id}
+              className={`card flex items-center gap-3 px-4 py-3 ${!inv.is_active ? "opacity-50" : ""}`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <code className="font-mono text-sm font-semibold text-white tracking-widest">
+                    {inv.code}
+                  </code>
+                  {inv.label && (
+                    <span className="truncate text-xs text-gray-600">— {inv.label}</span>
+                  )}
+                  {!inv.is_active && (
+                    <span className="text-xs text-gray-700">Inactive</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-gray-700">
+                  {inv.use_count} use{inv.use_count !== 1 ? "s" : ""}
+                  {" · "}
+                  {new Date(inv.created_at).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {inv.is_active && (
+                  <>
+                    <button
+                      onClick={() => handleCopy(inv)}
+                      className="btn-ghost btn-sm text-xs"
+                    >
+                      {copiedId === inv.id ? "Copied!" : "Copy Link"}
+                    </button>
+                    <button
+                      onClick={() => handleDeactivate(inv.id)}
+                      className="btn-ghost btn-sm text-xs text-red-400 hover:border-red-500/30 hover:bg-red-500/10"
+                    >
+                      Deactivate
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1574,6 +1789,98 @@ function ThemeSection({
         {saved && (
           <span className="text-xs text-green-400">Theme saved! Reload to see it applied.</span>
         )}
+        {error && <span className="text-xs text-red-400">{error}</span>}
+      </div>
+    </section>
+  );
+}
+
+// ── Display Mode Section (owner only) ─────────────────────────────────────────
+
+const DISPLAY_MODE_OPTIONS: { value: string; label: string; description: string }[] = [
+  { value: "username",          label: "@Username",           description: "Show @handle (default)" },
+  { value: "full_name",         label: "Full Name",           description: "Show first and last name" },
+  { value: "first_last_initial",label: "First + Last Initial",description: "e.g. Jordan T." },
+  { value: "custom",            label: "Custom Nickname",     description: "Show nickname / display name" },
+];
+
+function DisplayModeSection({
+  communityId,
+  currentDisplayMode,
+  onDone,
+}: {
+  communityId: string;
+  currentDisplayMode: string;
+  onDone: () => void;
+}) {
+  const [selected, setSelected] = useState(currentDisplayMode);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    setError("");
+    setSaved(false);
+    startTransition(async () => {
+      const res = await updateNameDisplayMode(communityId, selected);
+      if ("error" in res) {
+        setError(res.error);
+      } else {
+        setSaved(true);
+        onDone();
+      }
+    });
+  }
+
+  return (
+    <section>
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-white">Name Display Mode</h3>
+        <p className="mt-1 text-xs text-gray-600">
+          Controls how member names appear on posts and the feed across this community.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {DISPLAY_MODE_OPTIONS.map((opt) => {
+          const isActive = selected === opt.value;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => setSelected(opt.value)}
+              className={[
+                "w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-all",
+                isActive
+                  ? "border-[rgba(59,232,255,0.4)] bg-[rgba(59,232,255,0.08)]"
+                  : "border-white/[0.07] bg-white/[0.02] hover:border-white/20",
+              ].join(" ")}
+            >
+              <div className={[
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                isActive ? "border-[#3be8ff]" : "border-white/20",
+              ].join(" ")}>
+                {isActive && <div className="h-2 w-2 rounded-full bg-[#3be8ff]" />}
+              </div>
+              <div>
+                <p className={["text-sm font-medium", isActive ? "text-white" : "text-gray-400"].join(" ")}>
+                  {opt.label}
+                </p>
+                <p className="text-xs text-gray-600">{opt.description}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={handleSave}
+          disabled={pending || selected === currentDisplayMode}
+          className="btn-primary btn-sm"
+        >
+          {pending ? "Saving…" : "Save Display Mode"}
+        </button>
+        {saved && <span className="text-xs text-green-400">Saved!</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>
     </section>

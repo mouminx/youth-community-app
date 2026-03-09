@@ -23,8 +23,8 @@ export default async function PostPage({
   if (!membership) redirect(`/c/${slug}`);
 
   const [post, comments] = await Promise.all([
-    getPost(postId),
-    listComments(postId),
+    getPost(postId, community.name_display_mode),
+    listComments(postId, community.name_display_mode),
   ]);
   if (!post) notFound();
 
@@ -50,7 +50,7 @@ export default async function PostPage({
         </Link>
         <h1 className="text-lg font-semibold text-white">{post.title}</h1>
         <p className="mt-0.5 text-sm text-gray-600">
-          {post.author_name} · {date}
+          {post.author_name}{isOwnPost && <span className="text-gray-700"> (you)</span>} · {date}
         </p>
       </div>
 

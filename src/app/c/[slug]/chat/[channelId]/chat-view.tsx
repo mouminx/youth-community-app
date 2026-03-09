@@ -10,7 +10,7 @@ type Message = {
   content: string;
   created_at: string;
   user_id: string;
-  profiles: { display_name: string; avatar_url: string } | null;
+  profiles: { display_name: string; avatar_seed?: string; avatar_bg?: string } | null;
 };
 
 type Channel = {
@@ -59,7 +59,7 @@ export function ChatView({
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: "channel_id=eq." + currentChannelId }, async (payload) => {
         const { data } = await supabase
           .from("messages")
-          .select("id, content, created_at, user_id, profiles:profiles(display_name, avatar_url)")
+          .select("id, content, created_at, user_id, profiles:profiles(display_name, avatar_seed, avatar_bg)")
           .eq("id", payload.new.id)
           .single();
         if (data) {
@@ -89,7 +89,7 @@ export function ChatView({
       content,
       created_at: new Date().toISOString(),
       user_id: userId,
-      profiles: { display_name: "You", avatar_url: "" },
+      profiles: { display_name: "You" },
     };
     setMessages((prev) => [...prev, optimistic]);
     const res = await postMessage(communityId, currentChannelId, content);
@@ -167,8 +167,19 @@ export function ChatView({
             return (
               <div key={msg.id} className={"group flex gap-3 rounded-lg px-3 py-1 hover:bg-white/[0.02] " + (sameAuthor ? "mt-0.5" : "mt-3")}>
                 {!sameAuthor ? (
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-bold text-indigo-300 mt-0.5">
-                    {(msg.profiles?.display_name || "?").charAt(0).toUpperCase()}
+                  <div
+                    className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden mt-0.5"
+                    style={{
+                      background: `#${msg.profiles?.avatar_bg || "0b1020"}`,
+                      border: "1px solid rgba(59,232,255,0.15)",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(msg.profiles?.avatar_seed || msg.user_id)}&size=28`}
+                      alt={msg.profiles?.display_name || "avatar"}
+                      className="h-7 w-7"
+                    />
                   </div>
                 ) : (
                   <div className="w-7 shrink-0" />

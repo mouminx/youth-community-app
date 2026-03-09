@@ -20,7 +20,7 @@ export default async function FeedPage({
   const membership = await getMembership(supabase, community.id, user.id);
   if (!membership) redirect(`/c/${slug}`);
 
-  const posts = await listPosts(community.id);
+  const posts = await listPosts(community.id, community.name_display_mode);
 
   return (
     <div className="flex-1 overflow-y-auto">

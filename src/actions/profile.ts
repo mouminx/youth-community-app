@@ -58,6 +58,38 @@ export async function getProfile(
   };
 }
 
+export async function updateProfileInfo(
+  firstName: string,
+  lastName: string,
+  username: string,
+  displayName: string
+): Promise<{ error: string } | { success: true }> {
+  const supabase = await getSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const trimmed = username.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(trimmed)) {
+    return { error: "Username must be 3–20 characters and contain only letters, numbers, or underscores." };
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      username: trimmed,
+      display_name: displayName.trim() || trimmed,
+    })
+    .eq("id", user.id);
+
+  if (error) {
+    if (error.code === "23505") return { error: "Username already taken." };
+    return { error: error.message };
+  }
+  return { success: true };
+}
+
 export async function updateAvatar(
   seed: string,
   bg: string,

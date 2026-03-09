@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { getCommunityBySlug, getMembership } from "@/lib/rbac";
@@ -62,6 +63,19 @@ export default async function CommunityLayout({
   const isMentor = ["owner", "admin", "mentor"].includes(membership.role);
   const base = `/c/${slug}`;
 
+  // Profile completion gate: redirect users without a username to their profile.
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  if (!pathname.includes("/profile/")) {
+    const { data: userProfile } = await supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", user.id)
+      .single();
+    if (!userProfile?.username) {
+      redirect(`/c/${slug}/profile/${user.id}?setup=1`);
+    }
+  }
+
   const [channels, unreadCounts, currencyBalance] = await Promise.all([
     listChannels(community.id),
     getUnreadCounts(community.id),
@@ -102,13 +116,29 @@ export default async function CommunityLayout({
           </nav>
 
           {/* Footer */}
-          <div className="border-t border-white/[0.06] px-3 py-3">
+          <div className="border-t border-white/[0.06] px-3 py-3 space-y-0.5">
             <Link
               href="/communities"
               className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-gray-700 hover:text-gray-500 transition-colors"
             >
               <BackIcon /> All communities
             </Link>
+            <form action={async () => {
+              "use server";
+              const supabase = await getSupabaseServerClient();
+              await supabase.auth.signOut();
+              redirect("/login");
+            }}>
+              <button
+                type="submit"
+                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-xs text-gray-700 hover:text-red-400 transition-colors"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign out
+              </button>
+            </form>
           </div>
         </>
       }

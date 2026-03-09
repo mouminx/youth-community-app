@@ -87,8 +87,17 @@ export default async function AdminPage({
     granted_at: string;
   }[] = [];
 
+  let inviteCodes: {
+    id: string;
+    code: string;
+    label: string | null;
+    use_count: number;
+    is_active: boolean;
+    created_at: string;
+  }[] = [];
+
   if (isAdmin) {
-    const [reqResult, grantsResult] = await Promise.all([
+    const [reqResult, grantsResult, inviteResult] = await Promise.all([
       supabase
         .from("permission_requests")
         .select("id, requester_id, permission, requester_note, created_at")
@@ -100,9 +109,15 @@ export default async function AdminPage({
         .select("id, user_id, permission, granted_at")
         .eq("community_id", community.id)
         .order("granted_at"),
+      supabase
+        .from("invite_codes")
+        .select("id, code, label, use_count, is_active, created_at")
+        .eq("community_id", community.id)
+        .order("created_at", { ascending: false }),
     ]);
     permissionRequests = reqResult.data ?? [];
     grants = grantsResult.data ?? [];
+    inviteCodes = inviteResult.data ?? [];
   }
 
   return (
@@ -125,7 +140,9 @@ export default async function AdminPage({
       }
       permissionRequests={permissionRequests}
       grants={grants}
+      inviteCodes={inviteCodes}
       currentTheme={community.theme_key ?? "ascnd"}
+      currentDisplayMode={community.name_display_mode ?? "username"}
     />
   );
 }

@@ -28,7 +28,7 @@ export default async function BattlePassPage({
     return (
       <div className="flex-1 overflow-y-auto">
         <div className="border-b border-white/[0.06] px-8 py-5">
-          <h1 className="text-lg font-semibold text-white">The Ladder</h1>
+          <h1 className="text-lg font-semibold text-white">Seasonal Climb</h1>
           <p className="mt-0.5 text-sm text-gray-600">Season rewards and progression</p>
         </div>
         <div className="px-8 py-6">
@@ -55,7 +55,7 @@ export default async function BattlePassPage({
     <div className="flex-1 overflow-y-auto">
       {/* Page header */}
       <div className="border-b border-white/[0.06] px-8 py-5">
-        <h1 className="text-lg font-semibold text-white">The Ladder</h1>
+        <h1 className="text-lg font-semibold text-white">Seasonal Climb</h1>
         <p className="mt-0.5 text-sm text-gray-600">
           {season.name} ·{" "}
           {new Date(season.starts_at).toLocaleDateString("en", { month: "short", day: "numeric" })} –{" "}

@@ -46,8 +46,28 @@ export async function createPost(communityId: string, title: string, body: strin
   return { data };
 }
 
+// ── Name resolution ──────────────────────────────────────────────────────────
+function resolveDisplayName(
+  profile: { username?: string | null; first_name?: string; last_name?: string; display_name?: string } | null,
+  mode: string
+): string {
+  if (!profile) return "Member";
+  switch (mode) {
+    case "full_name":
+      return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || profile.display_name || "Member";
+    case "first_last_initial": {
+      const initial = profile.last_name?.[0] ?? "";
+      return `${profile.first_name ?? ""}${initial ? ` ${initial}.` : ""}`.trim() || "Member";
+    }
+    case "custom":
+      return profile.display_name || profile.username || "Member";
+    default:
+      return profile.username ? `@${profile.username}` : (profile.display_name || "Member");
+  }
+}
+
 // ── List posts for a community ───────────────────────────────────────────────
-export async function listPosts(communityId: string): Promise<Post[]> {
+export async function listPosts(communityId: string, displayMode = "username"): Promise<Post[]> {
   const supabase = await getSupabaseServerClient();
   const {
     data: { user },
@@ -55,7 +75,7 @@ export async function listPosts(communityId: string): Promise<Post[]> {
 
   const { data: posts } = await supabase
     .from("posts")
-    .select("id, community_id, author_id, title, body, created_at, profiles:profiles(display_name)")
+    .select("id, community_id, author_id, title, body, created_at, profiles:profiles(display_name, username, first_name, last_name)")
     .eq("community_id", communityId)
     .order("created_at", { ascending: false });
 
@@ -91,7 +111,7 @@ export async function listPosts(communityId: string): Promise<Post[]> {
       id: p.id,
       community_id: p.community_id,
       author_id: p.author_id,
-      author_name: profile?.display_name ?? "Unknown",
+      author_name: resolveDisplayName(profile, displayMode),
       title: p.title,
       body: p.body,
       created_at: p.created_at,
@@ -102,7 +122,7 @@ export async function listPosts(communityId: string): Promise<Post[]> {
 }
 
 // ── Get a single post ────────────────────────────────────────────────────────
-export async function getPost(postId: string): Promise<Post | null> {
+export async function getPost(postId: string, displayMode = "username"): Promise<Post | null> {
   const supabase = await getSupabaseServerClient();
   const {
     data: { user },
@@ -110,7 +130,7 @@ export async function getPost(postId: string): Promise<Post | null> {
 
   const { data: p } = await supabase
     .from("posts")
-    .select("id, community_id, author_id, title, body, created_at, profiles:profiles(display_name)")
+    .select("id, community_id, author_id, title, body, created_at, profiles:profiles(display_name, username, first_name, last_name)")
     .eq("id", postId)
     .single();
 
@@ -134,7 +154,7 @@ export async function getPost(postId: string): Promise<Post | null> {
     id: p.id,
     community_id: p.community_id,
     author_id: p.author_id,
-    author_name: profile?.display_name ?? "Unknown",
+    author_name: resolveDisplayName(profile, displayMode),
     title: p.title,
     body: p.body,
     created_at: p.created_at,
@@ -187,12 +207,12 @@ export async function createComment(postId: string, body: string, parentId?: str
 }
 
 // ── List comments for a post ─────────────────────────────────────────────────
-export async function listComments(postId: string): Promise<Comment[]> {
+export async function listComments(postId: string, displayMode = "username"): Promise<Comment[]> {
   const supabase = await getSupabaseServerClient();
 
   const { data } = await supabase
     .from("post_comments")
-    .select("id, post_id, author_id, body, parent_id, created_at, profiles:profiles(display_name)")
+    .select("id, post_id, author_id, body, parent_id, created_at, profiles:profiles(display_name, username, first_name, last_name)")
     .eq("post_id", postId)
     .order("created_at", { ascending: true });
 
@@ -202,7 +222,7 @@ export async function listComments(postId: string): Promise<Comment[]> {
       id: c.id,
       post_id: c.post_id,
       author_id: c.author_id,
-      author_name: profile?.display_name ?? "Unknown",
+      author_name: resolveDisplayName(profile, displayMode),
       body: c.body,
       parent_id: c.parent_id ?? null,
       created_at: c.created_at,

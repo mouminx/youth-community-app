@@ -52,7 +52,7 @@ export async function listMessages(
   const supabase = await getSupabaseServerClient();
   const { data } = await supabase
     .from("messages")
-    .select("id, content, created_at, user_id, profiles:profiles(display_name, avatar_url)")
+    .select("id, content, created_at, user_id, profiles:profiles(display_name, avatar_seed, avatar_bg)")
     .eq("community_id", communityId)
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false })
