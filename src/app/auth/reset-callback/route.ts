@@ -5,8 +5,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
 
-  // When running behind a reverse proxy (ngrok), use forwarded headers
-  // to build the correct origin rather than the internal localhost URL.
+  // Use forwarded headers so this works correctly behind Vercel's proxy.
   const forwardedHost = request.headers.get("x-forwarded-host");
   const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
   const origin = forwardedHost

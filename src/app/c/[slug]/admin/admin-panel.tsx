@@ -1091,7 +1091,7 @@ function InvitesSection({
   }
 
   function handleCopy(code: InviteCode) {
-    const url = `${baseUrl}/join/${code.code}?ngrok-skip-browser-warning=1`;
+    const url = `${baseUrl}/join/${code.code}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(code.id);
       setTimeout(() => setCopiedId(null), 2000);
